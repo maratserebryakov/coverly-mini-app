@@ -1,12 +1,189 @@
 <!DOCTYPE html>
 <html lang="ru">
-  <head>
+<head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Coverly — Обложки для плейлиста</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    <style>
+        :root {
+            --tg-bg: #ffffff;
+            --tg-text: #000000;
+            --tg-hint: #999999;
+            --tg-button: #2481cc;
+            --tg-button-text: #ffffff;
+            --tg-secondary-bg: #f0f0f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: var(--tg-bg);
+            color: var(--tg-text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .app-container { max-width: 500px; margin: 0 auto; padding: 20px; }
+        h1 { font-size: 24px; margin-bottom: 16px; font-weight: 700; }
+        p { margin-bottom: 16px; line-height: 1.5; color: var(--tg-hint); }
+        button {
+            background-color: var(--tg-button);
+            color: var(--tg-button-text);
+            border: none; border-radius: 12px;
+            padding: 12px 24px; font-size: 16px; font-weight: 600;
+            cursor: pointer; transition: opacity 0.2s;
+        }
+        button:active { opacity: 0.8; }
+        .template-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px;
+        }
+        .template-card {
+            background-color: var(--tg-secondary-bg);
+            border-radius: 16px; padding: 16px; text-align: center; cursor: pointer;
+            transition: transform 0.1s; border: 2px solid transparent;
+        }
+        .template-card:hover { transform: scale(1.02); }
+        .template-card.selected { border-color: var(--tg-button); }
+        .editor-canvas-container { display: flex; justify-content: center; margin: 20px 0; }
+        canvas { border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        input[type="text"], input[type="color"] {
+            width: 100%; padding: 12px; border-radius: 10px;
+            border: 1px solid var(--tg-hint);
+            background-color: var(--tg-secondary-bg);
+            color: var(--tg-text); font-size: 16px;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="select-screen" class="app-container">
+        <h1>Создай обложку плейлиста</h1>
+        <p>Выбери стиль, добавь текст и скачай готовое изображение для своего профиля Telegram.</p>
+        <div class="template-grid" id="template-grid"></div>
+        <button id="continue-btn">Продолжить в редакторе</button>
+    </div>
+
+    <div id="editor-screen" class="app-container hidden">
+        <button id="back-btn">← Назад к шаблонам</button>
+        <h1>Редактор обложки</h1>
+        <div class="editor-canvas-container">
+            <canvas id="cover-canvas" width="1024" height="1024"></canvas>
+        </div>
+        <div class="controls">
+            <input type="text" id="title-input" placeholder="Название плейлиста" value="Мой плейлист" />
+            <input type="text" id="subtitle-input" placeholder="Подзаголовок" value="Лучшие треки" />
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label>Цвет фона:</label>
+                <input type="color" id="bg-color-input" value="#1e1e1e" />
+            </div>
+            <button id="download-btn">Скачать обложку</button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+            applyTelegramTheme();
+        }
+
+        function applyTelegramTheme() {
+            if (!tg) return;
+            document.documentElement.style.setProperty('--tg-bg', tg.themeParams.bg_color || '#ffffff');
+            document.documentElement.style.setProperty('--tg-text', tg.themeParams.text_color || '#000000');
+            document.documentElement.style.setProperty('--tg-hint', tg.themeParams.hint_color || '#999999');
+            document.documentElement.style.setProperty('--tg-button', tg.themeParams.button_color || '#2481cc');
+            document.documentElement.style.setProperty('--tg-button-text', tg.themeParams.button_text_color || '#ffffff');
+            document.documentElement.style.setProperty('--tg-secondary-bg', tg.themeParams.secondary_bg_color || '#f0f0f0');
+        }
+
+        const templates = [
+            { id: 'classic', name: 'Классика', preview: '🎵', bg: '#1e1e1e', textColor: '#ffffff', font: 'bold 48px Arial' },
+            { id: 'neon', name: 'Неон', preview: '🌟', bg: '#0f0f1a', textColor: '#ff00c8', font: 'bold 52px "Courier New"' },
+            { id: 'minimal', name: 'Минимализм', preview: '▫️', bg: '#ffffff', textColor: '#000000', font: 'bold 40px "Helvetica Neue"' },
+            { id: 'vibe', name: 'Вайб', preview: '🌊', bg: '#1a3c34', textColor: '#a7f3d0', font: 'italic 44px Georgia' }
+        ];
+
+        let selectedTemplate = templates[0];
+
+        const selectScreen = document.getElementById('select-screen');
+        const editorScreen = document.getElementById('editor-screen');
+        const canvas = document.getElementById('cover-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const templateGrid = document.getElementById('template-grid');
+        function renderTemplates() {
+            templateGrid.innerHTML = '';
+            templates.forEach(tpl => {
+                const card = document.createElement('div');
+                card.className = 'template-card' + (selectedTemplate.id === tpl.id ? ' selected' : '');
+                card.innerHTML = `<div style="font-size:48px;margin-bottom:8px;">${tpl.preview}</div>
+                                  <div style="font-size:14px;font-weight:500;">${tpl.name}</div>`;
+                card.addEventListener('click', () => {
+                    selectedTemplate = tpl;
+                    renderTemplates();
+                });
+                templateGrid.appendChild(card);
+            });
+        }
+        renderTemplates();
+
+        document.getElementById('continue-btn').addEventListener('click', () => {
+            document.getElementById('bg-color-input').value = selectedTemplate.bg;
+            selectScreen.classList.add('hidden');
+            editorScreen.classList.remove('hidden');
+            drawCover();
+        });
+
+        document.getElementById('back-btn').addEventListener('click', () => {
+            editorScreen.classList.add('hidden');
+            selectScreen.classList.remove('hidden');
+        });
+
+        const titleInput = document.getElementById('title-input');
+        const subtitleInput = document.getElementById('subtitle-input');
+        const bgColorInput = document.getElementById('bg-color-input');
+
+        [titleInput, subtitleInput, bgColorInput].forEach(input => {
+            input.addEventListener('input', drawCover);
+        });
+
+        function drawCover() {
+            const tpl = selectedTemplate;
+            const bgColor = bgColorInput.value;
+            const title = titleInput.value || 'Мой плейлист';
+            const subtitle = subtitleInput.value || 'Лучшие треки';
+
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            const gradient = ctx.createLinearGradient(0, 724, 0, 1024);
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0.6)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 724, 1024, 300);
+
+            ctx.fillStyle = tpl.textColor;
+            ctx.font = tpl.font;
+            ctx.textAlign = 'center';
+            ctx.fillText(title, 512, 472);
+
+            ctx.font = `28px ${tpl.font.split(' ')[2] || 'Arial'}`;
+            ctx.fillStyle = tpl.textColor + 'CC';
+            ctx.fillText(subtitle, 512, 592);
+
+            ctx.font = '80px Arial';
+            ctx.fillStyle = tpl.textColor;
+            ctx.fillText('🎵', 512, 332);
+        }
+
+        document.getElementById('download-btn').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'coverly-cover.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            alert('Обложка сохранена! Установи её в настройках профиля Telegram в разделе "Музыка".');
+        });
+    </script>
+</body>
 </html>
