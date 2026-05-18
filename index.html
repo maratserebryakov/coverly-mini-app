@@ -178,12 +178,88 @@
         }
 
         document.getElementById('download-btn').addEventListener('click', () => {
-            const link = document.createElement('a');
-            link.download = 'coverly-cover.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-            alert('Обложка сохранена! Установи её в настройках профиля Telegram в разделе "Музыка".');
+    const dataUrl = canvas.toDataURL('image/png');
+    
+    // 1. Показываем превью и кнопки действий
+    showPreviewAndActions(dataUrl);
+});
+
+function showPreviewAndActions(dataUrl) {
+    // Скрываем редактор, показываем блок с результатом
+    document.getElementById('editor-screen').classList.add('hidden');
+    
+    let resultScreen = document.getElementById('result-screen');
+    if (!resultScreen) {
+        // Создаём экран результата, если его ещё нет
+        resultScreen = document.createElement('div');
+        resultScreen.id = 'result-screen';
+        resultScreen.className = 'app-container';
+        resultScreen.innerHTML = `
+            <h1>Обложка готова!</h1>
+            <div style="text-align:center; margin-bottom:20px;">
+                <img id="preview-image" style="max-width:100%; border-radius:16px; box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <button id="share-btn">Поделиться в Telegram</button>
+                <button id="download-file-btn" style="background-color:var(--tg-secondary-bg); color:var(--tg-text);">Скачать файл</button>
+                <button id="back-to-editor-btn" style="background-color:transparent; color:var(--tg-hint);">← Вернуться к редактору</button>
+            </div>
+        `;
+        document.body.appendChild(resultScreen);
+        
+        // Действия для новых кнопок
+        document.getElementById('share-btn').addEventListener('click', () => {
+            shareImage(dataUrl);
         });
+        document.getElementById('download-file-btn').addEventListener('click', () => {
+            downloadFile(dataUrl);
+        });
+        document.getElementById('back-to-editor-btn').addEventListener('click', () => {
+            resultScreen.classList.add('hidden');
+            document.getElementById('editor-screen').classList.remove('hidden');
+        });
+    }
+    
+    // Устанавливаем изображение
+    document.getElementById('preview-image').src = dataUrl;
+    resultScreen.classList.remove('hidden');
+}
+
+function shareImage(dataUrl) {
+    // Преобразуем Data URL в Blob для шаринга
+    fetch(dataUrl)
+        .then(res => res.blob())
+        .then(blob => {
+            const file = new File([blob], 'coverly-cover.png', { type: 'image/png' });
+            // Пытаемся использовать Telegram API для отправки в "Сохранённые"
+            if (window.Telegram?.WebApp) {
+                try {
+                    // Открываем окно "Поделиться" с файлом
+                    navigator.share({
+                        files: [file],
+                        title: 'Обложка для плейлиста'
+                    }).then(() => {
+                        alert('Отправьте файл в "Сохранённые сообщения" (нажмите на свою аватарку в меню "Поделиться")');
+                    }).catch(() => {
+                        // Fallback: скачиваем файл с подсказкой
+                        downloadFile(dataUrl);
+                        alert('Окно "Поделиться" не открылось. Файл сохранён на устройство. Вы можете отправить его в "Сохранённые сообщения" вручную.');
+                    });
+                } catch (e) {
+                    downloadFile(dataUrl);
+                }
+            } else {
+                downloadFile(dataUrl);
+            }
+        });
+}
+
+function downloadFile(dataUrl) {
+    const link = document.createElement('a');
+    link.download = 'coverly-cover.png';
+    link.href = dataUrl;
+    link.click();
+}
     </script>
 </body>
 </html>
